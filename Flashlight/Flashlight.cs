@@ -12,7 +12,7 @@ public class Flashlight : BasePlugin
     public override string ModuleAuthor => "creazy.eth";
     public override string ModuleName => "Flashlight";
     public override string ModuleDescription => "Flashlight for Counter-Strike 2";
-    public override string ModuleVersion => "0.0.3";
+    public override string ModuleVersion => "0.0.4";
 
     private static string ModuleDisplayName => "Flashlight";
     
@@ -30,12 +30,14 @@ public class Flashlight : BasePlugin
 
     public override void Load(bool hotReload)
     {
-        LogHelper.LogToConsole(ConsoleColor.Green, $"{ModuleName} version {ModuleVersion} loaded");
-
         Instance = this;
+        
+        LogHelper.LogToConsole(ConsoleColor.Green, $"{ModuleName} v{ModuleVersion} loading...");
         
         RegisterListener<Listeners.OnTick>(() =>
         {
+            if (_connectedPlayers.Count == 0) return;
+            
             foreach (var player in _connectedPlayers.Where(player => player is { IsValid: true, IsBot: false, PawnIsAlive: true }))
             {
                 ToggleFlashlight(player);
@@ -77,7 +79,7 @@ public class Flashlight : BasePlugin
             }
         });
 
-        LogHelper.LogToChatAll($"{ModuleDisplayName} v{ModuleVersion} loaded!");
+        LogHelper.LogToConsole($"{ModuleDisplayName} v{ModuleVersion} loaded!");
     }
     
     [GameEventHandler]
