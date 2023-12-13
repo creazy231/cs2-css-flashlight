@@ -16,7 +16,7 @@ Flashlight is a plugin for Counter-Strike 2 that adds a flashlight feature for p
 
 ## 💻 Usage
 
-⌨️ Use the `Use` key to toggle the flashlight on and off. The default key for this is `E`.
+⌨️ Use the `Use` key to toggle the flashlight on and off. The default key for this is `E`. Or use the `/fl_toggle` command in chat which could then be bind to a different key.
 
 ## 🤝 Contributing
 
