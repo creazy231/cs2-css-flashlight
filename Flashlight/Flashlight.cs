@@ -38,7 +38,7 @@ public class Flashlight : BasePlugin
         {
             foreach (var player in _connectedPlayers.Where(player => player is { IsValid: true, IsBot: false, PawnIsAlive: true }))
             {
-                ToggleFlashlight(player, null);
+                ToggleFlashlight(player);
                 
                 if (_playerCanToggle[player] == false) continue;
                 
@@ -142,22 +142,20 @@ public class Flashlight : BasePlugin
         return HookResult.Continue;
     }
 
-    [ConsoleCommand("fl_toggle", "Toggles the flashlight")]
-    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
-    public void ToggleFlashlight(CCSPlayerController caller, CommandInfo? info)
+    public void ToggleFlashlight(CCSPlayerController player)
     {
-        if (_playerUsingFlashlight[caller] == false)
+        if (_playerUsingFlashlight[player] == false)
         {
-            if (_playerFlashlight.TryGetValue(caller, out var value))
+            if (_playerFlashlight.TryGetValue(player, out var value))
             {
                 value.Remove();
-                _playerFlashlight.Remove(caller);
+                _playerFlashlight.Remove(player);
             }
             
             return;
         }
         
-        var entity = _playerFlashlight.TryGetValue(caller, out var flashlight) ? flashlight : Utilities.CreateEntityByName<COmniLight>("light_omni2");
+        var entity = _playerFlashlight.TryGetValue(player, out var flashlight) ? flashlight : Utilities.CreateEntityByName<COmniLight>("light_omni2");
 
         if (entity == null || !entity.IsValid)
         {
@@ -169,12 +167,12 @@ public class Flashlight : BasePlugin
         
         entity.Teleport(
             new Vector(
-                caller.PlayerPawn.Value!.AbsOrigin!.X,
-                caller.PlayerPawn.Value!.AbsOrigin!.Y,
-                caller.PlayerPawn.Value!.AbsOrigin!.Z + (_playerIsCrouching[caller] ? 46.03f : 64.03f)
+                player.PlayerPawn.Value!.AbsOrigin!.X,
+                player.PlayerPawn.Value!.AbsOrigin!.Y,
+                player.PlayerPawn.Value!.AbsOrigin!.Z + (_playerIsCrouching[player] ? 46.03f : 64.03f)
             ),
-            caller.PlayerPawn.Value!.EyeAngles,
-            caller.PlayerPawn.Value!.AbsVelocity
+            player.PlayerPawn.Value!.EyeAngles,
+            player.PlayerPawn.Value!.AbsVelocity
         );
         
         entity.OuterAngle = 45f;
@@ -185,6 +183,23 @@ public class Flashlight : BasePlugin
         entity.Range = 5000f;
         
         entity.DispatchSpawn();
-        _playerFlashlight[caller] = entity;
+        _playerFlashlight[player] = entity;
+    }
+
+    [ConsoleCommand("fl_toggle", "Toggles the flashlight")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    public void ToggleFlashlight(CCSPlayerController caller, CommandInfo? info)
+    {
+        if (!caller.IsValid || !caller.PawnIsAlive) return;
+
+        if (_playerCanToggle[caller] == false) return;
+        
+        _playerUsingFlashlight[caller] = !_playerUsingFlashlight[caller];
+        _playerCanToggle[caller] = false;
+                        
+        Instance?.AddTimer(0.25f, () =>
+        {
+            _playerCanToggle[caller] = true;
+        });
     }
 }

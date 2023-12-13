@@ -4,7 +4,7 @@ Flashlight is a plugin for Counter-Strike 2 that adds a flashlight feature for p
 
 ## ⭐ Features
 
-- 💡 Players can toggle the flashlight on and off.
+- 💡 Players can toggle the flashlight on and off using `Use` key (the default key for this is `E`) or `/fl_toggle` in chat which could be bind to a different key.
 - 💀 The flashlight is automatically turned off when the player dies or respawns.
 - 🚫 The flashlight is only available to human players, not bots.
 
