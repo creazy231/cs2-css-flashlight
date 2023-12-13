@@ -24,6 +24,7 @@ Contributions are welcome. Please open an issue or submit a pull request on GitH
 
 ## 📝 Development Tasks
 
+- Change crouch-tracking to a more elegant solution
 - Add config and make light entity values configurable
 - Maybe replace light_omni2 with light_rect or something else
 

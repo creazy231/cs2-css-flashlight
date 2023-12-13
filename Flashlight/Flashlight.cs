@@ -16,6 +16,7 @@ public class Flashlight : BasePlugin
 
     private static string ModuleDisplayName => "Flashlight";
     
+    // TODO: Change crouch-tracking to a more elegant solution
     // TODO: Add config and make light entity values configurable
     // TODO: Maybe replace light_omni2 with light_rect or something else
 
@@ -23,6 +24,7 @@ public class Flashlight : BasePlugin
     
     private readonly List<CCSPlayerController> _connectedPlayers = new();
     private readonly Dictionary<CCSPlayerController, bool> _playerUsingFlashlight = new();
+    private readonly Dictionary<CCSPlayerController, bool> _playerIsCrouching = new();
     private readonly Dictionary<CCSPlayerController, bool> _playerCanToggle = new();
     private readonly Dictionary<CCSPlayerController, COmniLight> _playerFlashlight = new();
 
@@ -63,6 +65,15 @@ public class Flashlight : BasePlugin
                         });
                     }
                 }
+                
+                if ((player.Buttons & PlayerButtons.Duck) != 0)
+                {
+                    _playerIsCrouching[player] = true;
+                }
+                else
+                {
+                    _playerIsCrouching[player] = false;
+                }
             }
         });
 
@@ -78,6 +89,7 @@ public class Flashlight : BasePlugin
         
         _connectedPlayers.Add(player);
         _playerUsingFlashlight[player] = false;
+        _playerIsCrouching[player] = false;
         _playerCanToggle[player] = true;
         
         LogHelper.LogToConsole(ConsoleColor.Green, $"{player.PlayerName} connected");
@@ -94,7 +106,12 @@ public class Flashlight : BasePlugin
         
         _connectedPlayers.Remove(player);
         _playerUsingFlashlight.Remove(player);
+        _playerIsCrouching.Remove(player);
         _playerCanToggle.Remove(player);
+        
+        _playerFlashlight.TryGetValue(player, out var flashlight);
+        flashlight?.Remove();
+        _playerFlashlight.Remove(player);
         
         LogHelper.LogToConsole(ConsoleColor.Green, $"{player.PlayerName} disconnected");
         
@@ -154,7 +171,7 @@ public class Flashlight : BasePlugin
             new Vector(
                 caller.PlayerPawn.Value!.AbsOrigin!.X,
                 caller.PlayerPawn.Value!.AbsOrigin!.Y,
-                caller.PlayerPawn.Value!.AbsOrigin!.Z + 64.03f
+                caller.PlayerPawn.Value!.AbsOrigin!.Z + (_playerIsCrouching[caller] ? 46.03f : 64.03f)
             ),
             caller.PlayerPawn.Value!.EyeAngles,
             caller.PlayerPawn.Value!.AbsVelocity
