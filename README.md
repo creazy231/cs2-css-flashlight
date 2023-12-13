@@ -22,6 +22,11 @@ Flashlight is a plugin for Counter-Strike 2 that adds a flashlight feature for p
 
 Contributions are welcome. Please open an issue or submit a pull request on GitHub. 🐙
 
+## 📝 Development Tasks
+
+- Add config and make light entity values configurable
+- Maybe replace light_omni2 with light_rect or something else
+
 ## 📃 License
 
 This project is licensed under the GNU General Public License. ⚖️
