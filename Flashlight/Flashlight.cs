@@ -1,12 +1,14 @@
 ﻿using System.Drawing;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
 using Vector = CounterStrikeSharp.API.Modules.Utils.Vector;
 
 namespace Flashlight;
 
+[MinimumApiVersion(126)]
 public class Flashlight : BasePlugin
 {
     public override string ModuleAuthor => "creazy.eth";
@@ -36,8 +38,6 @@ public class Flashlight : BasePlugin
         
         RegisterListener<Listeners.OnTick>(() =>
         {
-            if (_connectedPlayers.Count == 0) return;
-            
             foreach (var player in _connectedPlayers.Where(player => player is { IsValid: true, IsBot: false, PawnIsAlive: true }))
             {
                 ToggleFlashlight(player);
@@ -127,6 +127,14 @@ public class Flashlight : BasePlugin
         
         if (!player.IsValid || player.IsBot) return HookResult.Continue;
         
+        if (_connectedPlayers.Contains(player) == false)
+        {
+            _connectedPlayers.Add(player);
+            _playerUsingFlashlight[player] = false;
+            _playerIsCrouching[player] = false;
+            _playerCanToggle[player] = true;
+        }
+        
         _playerUsingFlashlight[player] = false;
         
         return HookResult.Continue;
@@ -188,7 +196,7 @@ public class Flashlight : BasePlugin
         _playerFlashlight[player] = entity;
     }
 
-    [ConsoleCommand("fl_toggle", "Toggles the flashlight")]
+    [ConsoleCommand("css_fl_toggle", "Toggles the flashlight")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void ToggleFlashlight(CCSPlayerController caller, CommandInfo? info)
     {
