@@ -14,7 +14,7 @@ public class Flashlight : BasePlugin
     public override string ModuleAuthor => "creazy.eth";
     public override string ModuleName => "Flashlight";
     public override string ModuleDescription => "Flashlight for Counter-Strike 2";
-    public override string ModuleVersion => "0.0.6";
+    public override string ModuleVersion => "0.0.7";
 
     private static string ModuleDisplayName => "Flashlight";
     
@@ -22,6 +22,7 @@ public class Flashlight : BasePlugin
     // TODO: Add config and make light entity values configurable
     // TODO: Maybe replace light_omni2 with light_rect or something else
     // FIXED: EyeAngles -> V_angle for CSS API v1.0.363+ compatibility
+    // FIXED: Entity validity check before Remove() to prevent crashes on team switch (Issue #2)
 
     public static Flashlight? Instance { get; private set; }
     
@@ -114,7 +115,11 @@ public class Flashlight : BasePlugin
         _playerCanToggle.Remove(player);
         
         _playerFlashlight.TryGetValue(player, out var flashlight);
-        flashlight?.Remove();
+        // Fix #2: Check entity validity before removing
+        if (flashlight != null && flashlight.IsValid)
+        {
+            flashlight.Remove();
+        }
         _playerFlashlight.Remove(player);
         
         LogHelper.LogToConsole(ConsoleColor.Green, $"{player.PlayerName} disconnected");
@@ -154,13 +159,40 @@ public class Flashlight : BasePlugin
         return HookResult.Continue;
     }
 
+    [GameEventHandler]
+    public HookResult OnPlayerTeam(EventPlayerTeam @event, GameEventInfo info)
+    {
+        // Fix #2: Handle team switch - clean up flashlight entity
+        var player = @event.Userid;
+        
+        if (!player.IsValid || player.IsBot) return HookResult.Continue;
+        
+        // Turn off flashlight and clean up entity when switching teams
+        _playerUsingFlashlight[player] = false;
+        
+        if (_playerFlashlight.TryGetValue(player, out var flashlight))
+        {
+            if (flashlight != null && flashlight.IsValid)
+            {
+                flashlight.Remove();
+            }
+            _playerFlashlight.Remove(player);
+        }
+        
+        return HookResult.Continue;
+    }
+
     public void ToggleFlashlight(CCSPlayerController player)
     {
         if (_playerUsingFlashlight[player] == false)
         {
             if (_playerFlashlight.TryGetValue(player, out var value))
             {
-                value.Remove();
+                // Fix #2: Check entity validity before removing
+                if (value.IsValid)
+                {
+                    value.Remove();
+                }
                 _playerFlashlight.Remove(player);
             }
             
