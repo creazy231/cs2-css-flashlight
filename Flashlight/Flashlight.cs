@@ -8,19 +8,20 @@ using Vector = CounterStrikeSharp.API.Modules.Utils.Vector;
 
 namespace Flashlight;
 
-[MinimumApiVersion(126)]
+[MinimumApiVersion(363)]
 public class Flashlight : BasePlugin
 {
     public override string ModuleAuthor => "creazy.eth";
     public override string ModuleName => "Flashlight";
     public override string ModuleDescription => "Flashlight for Counter-Strike 2";
-    public override string ModuleVersion => "0.0.5";
+    public override string ModuleVersion => "0.0.6";
 
     private static string ModuleDisplayName => "Flashlight";
     
     // TODO: Change crouch-tracking to a more elegant solution
     // TODO: Add config and make light entity values configurable
     // TODO: Maybe replace light_omni2 with light_rect or something else
+    // FIXED: EyeAngles -> V_angle for CSS API v1.0.363+ compatibility
 
     public static Flashlight? Instance { get; private set; }
     
@@ -47,6 +48,7 @@ public class Flashlight : BasePlugin
                 if ((player.Buttons & PlayerButtons.Use) != 0)
                 {
                     _playerCanToggle[player] = false;
+                    var currentPlayer = player; // Capture for closure
                     
                     if (_playerUsingFlashlight[player] == false)
                     {
@@ -54,7 +56,7 @@ public class Flashlight : BasePlugin
                     
                         Instance?.AddTimer(0.25f, () =>
                         {
-                            _playerCanToggle[player] = true;
+                            _playerCanToggle[currentPlayer] = true;
                         });
                     }
                     else
@@ -63,7 +65,7 @@ public class Flashlight : BasePlugin
                         
                         Instance?.AddTimer(0.25f, () =>
                         {
-                            _playerCanToggle[player] = true;
+                            _playerCanToggle[currentPlayer] = true;
                         });
                     }
                 }
@@ -175,14 +177,21 @@ public class Flashlight : BasePlugin
         
         entity.DirectLight = 3;
         
+        var pawn = player.PlayerPawn.Value;
+        if (pawn?.AbsOrigin == null || pawn.V_angle == null)
+        {
+            LogHelper.LogToConsole("Failed to get player pawn data!");
+            return;
+        }
+
         entity.Teleport(
             new Vector(
-                player.PlayerPawn.Value!.AbsOrigin!.X,
-                player.PlayerPawn.Value!.AbsOrigin!.Y,
-                player.PlayerPawn.Value!.AbsOrigin!.Z + (_playerIsCrouching[player] ? 46.03f : 64.03f)
+                pawn.AbsOrigin.X,
+                pawn.AbsOrigin.Y,
+                pawn.AbsOrigin.Z + (_playerIsCrouching[player] ? 46.03f : 64.03f)
             ),
-            player.PlayerPawn.Value!.EyeAngles,
-            player.PlayerPawn.Value!.AbsVelocity
+            pawn.V_angle,
+            pawn.AbsVelocity
         );
         
         entity.OuterAngle = 45f;
@@ -206,10 +215,12 @@ public class Flashlight : BasePlugin
         
         _playerUsingFlashlight[caller] = !_playerUsingFlashlight[caller];
         _playerCanToggle[caller] = false;
+        
+        var currentCaller = caller; // Capture for closure
                         
         Instance?.AddTimer(0.25f, () =>
         {
-            _playerCanToggle[caller] = true;
+            _playerCanToggle[currentCaller] = true;
         });
     }
 }
