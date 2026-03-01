@@ -55,11 +55,12 @@ jobs:
           type: 'zip'
           filename: '${{ env.PROJECT_NAME }}.zip'
           path: ${{ env.PUBLISH_PATH }}
-      - name: GunGameLite
+      - name: Create Release
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "${{ env.PROJECT_NAME }}.zip"
           name: "${{ env.BUILD_NUMBER }}"
           tag: "${{ env.BUILD_NUMBER }}"
+          allowUpdates: true
           body: |
             Place the plugin in game/csgo/addons/counterstrikesharp/plugins/Flashlight
