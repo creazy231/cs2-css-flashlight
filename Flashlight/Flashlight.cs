@@ -16,7 +16,7 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
     public override string ModuleAuthor => "creazy.eth";
     public override string ModuleName => "Flashlight";
     public override string ModuleDescription => "Flashlight for Counter-Strike 2";
-    public override string ModuleVersion => "0.1.0";
+    public override string ModuleVersion => "0.1.1";
 
     public FlashlightConfig Config { get; set; } = new();
 
@@ -169,6 +169,12 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
 
     private void TryToggleFlashlight(CCSPlayerController player, PlayerFlashlightState state)
     {
+        // Turning on is restricted by AllowedTeam; turning off is always allowed.
+        if (!state.IsOn && !FlashlightLogic.IsTeamAllowed(Config.AllowedTeam, (byte)player.Team))
+        {
+            return;
+        }
+
         var isOn = state.IsOn;
         var canToggle = state.CanToggle;
 

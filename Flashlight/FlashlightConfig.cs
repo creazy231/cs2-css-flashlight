@@ -11,6 +11,12 @@ public class FlashlightConfig : BasePluginConfig
     [JsonPropertyName("AllowUseKey")]
     public bool AllowUseKey { get; set; } = true;
 
+    /// <summary>
+    /// Which team may use the flashlight: Any, CT, or T.
+    /// </summary>
+    [JsonPropertyName("AllowedTeam")]
+    public string AllowedTeam { get; set; } = "Any";
+
     [JsonPropertyName("ToggleCooldownSeconds")]
     public float ToggleCooldownSeconds { get; set; } = 0.25f;
 
@@ -97,5 +103,17 @@ public class FlashlightConfig : BasePluginConfig
         {
             LightCookie = "materials/effects/lightcookies/flashlight.vtex";
         }
+
+        AllowedTeam = NormalizeAllowedTeam(AllowedTeam);
+    }
+
+    public static string NormalizeAllowedTeam(string? value)
+    {
+        return value?.Trim().ToUpperInvariant() switch
+        {
+            "T" or "TERRORIST" or "TERRORISTS" => "T",
+            "CT" or "COUNTERTERRORIST" or "COUNTERTERRORISTS" or "COUNTER-TERRORIST" or "COUNTER-TERRORISTS" => "CT",
+            _ => "Any"
+        };
     }
 }

@@ -59,4 +59,18 @@ public static class FlashlightLogic
     {
         return !isOn && hasValidLight;
     }
+
+    /// <summary>
+    /// Returns whether <paramref name="team"/> may use the flashlight.
+    /// Team values match CS2: 2 = Terrorist, 3 = Counter-Terrorist.
+    /// </summary>
+    public static bool IsTeamAllowed(string allowedTeam, byte team)
+    {
+        return allowedTeam switch
+        {
+            "T" => team == 2,
+            "CT" => team == 3,
+            _ => true
+        };
+    }
 }
