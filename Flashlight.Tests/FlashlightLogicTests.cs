@@ -121,4 +121,32 @@ public class FlashlightLogicTests
         Assert.Equal("axis_of_intent", config.AttachmentName);
         Assert.Equal("materials/effects/lightcookies/flashlight.vtex", config.LightCookie);
     }
+
+    [Theory]
+    [InlineData("Any", 2, true)]
+    [InlineData("Any", 3, true)]
+    [InlineData("Any", 1, true)]
+    [InlineData("T", 2, true)]
+    [InlineData("T", 3, false)]
+    [InlineData("CT", 3, true)]
+    [InlineData("CT", 2, false)]
+    public void IsTeamAllowed_RespectsConfiguredSide(string allowedTeam, byte team, bool expected)
+    {
+        Assert.Equal(expected, FlashlightLogic.IsTeamAllowed(allowedTeam, team));
+    }
+
+    [Theory]
+    [InlineData("t", "T")]
+    [InlineData("Terrorist", "T")]
+    [InlineData("ct", "CT")]
+    [InlineData("CounterTerrorist", "CT")]
+    [InlineData("any", "Any")]
+    [InlineData("something-else", "Any")]
+    [InlineData(null, "Any")]
+    public void ConfigClamp_NormalizesAllowedTeam(string? input, string expected)
+    {
+        var config = new FlashlightConfig { AllowedTeam = input! };
+        config.Clamp();
+        Assert.Equal(expected, config.AllowedTeam);
+    }
 }

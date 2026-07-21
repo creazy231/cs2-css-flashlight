@@ -7,6 +7,7 @@ Flashlight is a Counter-Strike 2 server plugin written in C# with [CounterStrike
 - Toggle with the Use key (`E` by default) or `css_fl_toggle`
 - One `light_barn` per player, parented to the pawn attachment (no per-tick spawn/teleport)
 - Configurable brightness, range, color, shadows, offsets, and attachment
+- Optional team restriction (`Any`, `CT`, or `T`)
 - Automatically turns off on death, spawn, and team change
 - Bots ignored
 
@@ -38,6 +39,7 @@ On first load, CounterStrikeSharp writes a JSON config for the plugin. Defaults:
 | --- | --- | --- |
 | `Enabled` | `true` | Master switch |
 | `AllowUseKey` | `true` | Allow Use-key toggle |
+| `AllowedTeam` | `Any` | Who may use it: `Any`, `CT`, or `T` |
 | `ToggleCooldownSeconds` | `0.25` | Toggle cooldown |
 | `Brightness` | `1.0` | Light brightness |
 | `Range` | `2048` | Light range |
@@ -77,11 +79,12 @@ Unit tests cover toggle/cooldown logic, Use-key edge detection, origin math, cre
 
 ## Changelog
 
-### v0.1.0
+### v0.1.1
 
 - Updated to .NET 10 and CounterStrikeSharp.API 1.0.371
 - Replaced per-tick `light_omni2` spawn/teleport with parented `light_barn`
 - Added `IPluginConfig` settings for light and toggle behavior
+- Added `AllowedTeam` config (`Any` / `CT` / `T`) to restrict flashlight by side
 - Added focused xUnit tests for pure helpers
 - Updated GitHub Actions for .NET 10, PR tests, and tag releases
 - Switched logging to `BasePlugin.Logger`
