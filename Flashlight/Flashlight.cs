@@ -1,149 +1,127 @@
 ﻿using System.Drawing;
+using System.Numerics;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
-using Vector = CounterStrikeSharp.API.Modules.Utils.Vector;
+using CounterStrikeSharp.API.Modules.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Flashlight;
 
-[MinimumApiVersion(363)]
-public class Flashlight : BasePlugin
+[MinimumApiVersion(371)]
+public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
 {
     public override string ModuleAuthor => "creazy.eth";
     public override string ModuleName => "Flashlight";
     public override string ModuleDescription => "Flashlight for Counter-Strike 2";
-    public override string ModuleVersion => "0.0.7";
+    public override string ModuleVersion => "0.1.0";
 
-    private static string ModuleDisplayName => "Flashlight";
-    
-    // TODO: Change crouch-tracking to a more elegant solution
-    // TODO: Add config and make light entity values configurable
-    // TODO: Maybe replace light_omni2 with light_rect or something else
-    // FIXED: EyeAngles -> V_angle for CSS API v1.0.363+ compatibility
-    // FIXED: Entity validity check before Remove() to prevent crashes on team switch (Issue #2)
+    public FlashlightConfig Config { get; set; } = new();
 
-    public static Flashlight? Instance { get; private set; }
-    
-    private readonly List<CCSPlayerController> _connectedPlayers = new();
-    private readonly Dictionary<CCSPlayerController, bool> _playerUsingFlashlight = new();
-    private readonly Dictionary<CCSPlayerController, bool> _playerIsCrouching = new();
-    private readonly Dictionary<CCSPlayerController, bool> _playerCanToggle = new();
-    private readonly Dictionary<CCSPlayerController, COmniLight> _playerFlashlight = new();
+    private readonly Dictionary<int, PlayerFlashlightState> _playerStates = new();
+
+    public void OnConfigParsed(FlashlightConfig config)
+    {
+        config.Clamp();
+        Config = config;
+    }
 
     public override void Load(bool hotReload)
     {
-        Instance = this;
-        
-        LogHelper.LogToConsole(ConsoleColor.Green, $"{ModuleName} v{ModuleVersion} loading...");
-        
-        RegisterListener<Listeners.OnTick>(() =>
-        {
-            foreach (var player in _connectedPlayers.Where(player => player is { IsValid: true, IsBot: false, PawnIsAlive: true }))
-            {
-                ToggleFlashlight(player);
-                
-                if (_playerCanToggle[player] == false) continue;
-                
-                if ((player.Buttons & PlayerButtons.Use) != 0)
-                {
-                    _playerCanToggle[player] = false;
-                    var currentPlayer = player; // Capture for closure
-                    
-                    if (_playerUsingFlashlight[player] == false)
-                    {
-                        _playerUsingFlashlight[player] = true;
-                    
-                        Instance?.AddTimer(0.25f, () =>
-                        {
-                            _playerCanToggle[currentPlayer] = true;
-                        });
-                    }
-                    else
-                    {
-                        _playerUsingFlashlight[player] = false;
-                        
-                        Instance?.AddTimer(0.25f, () =>
-                        {
-                            _playerCanToggle[currentPlayer] = true;
-                        });
-                    }
-                }
-                
-                if ((player.Buttons & PlayerButtons.Duck) != 0)
-                {
-                    _playerIsCrouching[player] = true;
-                }
-                else
-                {
-                    _playerIsCrouching[player] = false;
-                }
-            }
-        });
+        Logger.LogInformation("{Name} v{Version} loading...", ModuleName, ModuleVersion);
 
-        LogHelper.LogToConsole($"{ModuleDisplayName} v{ModuleVersion} loaded!");
+        RegisterListener<Listeners.OnTick>(OnTick);
+
+        if (hotReload)
+        {
+            foreach (var player in Utilities.GetPlayers().Where(IsEligiblePlayer))
+            {
+                EnsureState(player);
+            }
+        }
+
+        Logger.LogInformation("{Name} v{Version} loaded!", ModuleName, ModuleVersion);
     }
-    
+
+    public override void Unload(bool hotReload)
+    {
+        foreach (var slot in _playerStates.Keys.ToList())
+        {
+            DestroyLight(slot);
+        }
+
+        _playerStates.Clear();
+    }
+
+    private void OnTick()
+    {
+        if (!Config.Enabled || !Config.AllowUseKey)
+        {
+            return;
+        }
+
+        foreach (var player in Utilities.GetPlayers())
+        {
+            if (!IsEligiblePlayer(player) || !player.PawnIsAlive)
+            {
+                continue;
+            }
+
+            var state = EnsureState(player);
+            var usePressed = (player.Buttons & PlayerButtons.Use) != 0;
+
+            if (FlashlightLogic.IsUsePressedEdge(usePressed, state.WasUsePressed))
+            {
+                TryToggleFlashlight(player, state);
+            }
+
+            state.WasUsePressed = usePressed;
+        }
+    }
+
     [GameEventHandler]
     public HookResult OnPlayerConnectFull(EventPlayerConnectFull @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        
-        if (!player.IsValid || player.IsBot) return HookResult.Continue;
-        
-        _connectedPlayers.Add(player);
-        _playerUsingFlashlight[player] = false;
-        _playerIsCrouching[player] = false;
-        _playerCanToggle[player] = true;
-        
-        LogHelper.LogToConsole(ConsoleColor.Green, $"{player.PlayerName} connected");
-        
+        if (player is null || !IsEligiblePlayer(player))
+        {
+            return HookResult.Continue;
+        }
+
+        EnsureState(player);
+        Logger.LogInformation("{Player} connected", player.PlayerName);
         return HookResult.Continue;
     }
-    
+
     [GameEventHandler]
     public HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        
-        if (!player.IsValid || player.IsBot) return HookResult.Continue;
-        
-        _connectedPlayers.Remove(player);
-        _playerUsingFlashlight.Remove(player);
-        _playerIsCrouching.Remove(player);
-        _playerCanToggle.Remove(player);
-        
-        _playerFlashlight.TryGetValue(player, out var flashlight);
-        // Fix #2: Check entity validity before removing
-        if (flashlight != null && flashlight.IsValid)
+        if (player is null || !player.IsValid)
         {
-            flashlight.Remove();
+            return HookResult.Continue;
         }
-        _playerFlashlight.Remove(player);
-        
-        LogHelper.LogToConsole(ConsoleColor.Green, $"{player.PlayerName} disconnected");
-        
+
+        var slot = player.Slot;
+        DestroyLight(slot);
+        _playerStates.Remove(slot);
         return HookResult.Continue;
     }
-    
+
     [GameEventHandler]
     public HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        
-        if (!player.IsValid || player.IsBot) return HookResult.Continue;
-        
-        if (_connectedPlayers.Contains(player) == false)
+        if (player is null || !IsEligiblePlayer(player))
         {
-            _connectedPlayers.Add(player);
-            _playerUsingFlashlight[player] = false;
-            _playerIsCrouching[player] = false;
-            _playerCanToggle[player] = true;
+            return HookResult.Continue;
         }
-        
-        _playerUsingFlashlight[player] = false;
-        
+
+        var state = EnsureState(player);
+        state.IsOn = false;
+        DestroyLight(player.Slot);
         return HookResult.Continue;
     }
 
@@ -151,108 +129,173 @@ public class Flashlight : BasePlugin
     public HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        
-        if (!player.IsValid || player.IsBot) return HookResult.Continue;
-        
-        _playerUsingFlashlight[player] = false;
-        
+        if (player is null || !IsEligiblePlayer(player))
+        {
+            return HookResult.Continue;
+        }
+
+        var state = EnsureState(player);
+        state.IsOn = false;
+        DestroyLight(player.Slot);
         return HookResult.Continue;
     }
 
     [GameEventHandler]
     public HookResult OnPlayerTeam(EventPlayerTeam @event, GameEventInfo info)
     {
-        // Fix #2: Handle team switch - clean up flashlight entity
         var player = @event.Userid;
-        
-        if (!player.IsValid || player.IsBot) return HookResult.Continue;
-        
-        // Turn off flashlight and clean up entity when switching teams
-        _playerUsingFlashlight[player] = false;
-        
-        if (_playerFlashlight.TryGetValue(player, out var flashlight))
+        if (player is null || !IsEligiblePlayer(player))
         {
-            if (flashlight != null && flashlight.IsValid)
-            {
-                flashlight.Remove();
-            }
-            _playerFlashlight.Remove(player);
+            return HookResult.Continue;
         }
-        
+
+        var state = EnsureState(player);
+        state.IsOn = false;
+        DestroyLight(player.Slot);
         return HookResult.Continue;
-    }
-
-    public void ToggleFlashlight(CCSPlayerController player)
-    {
-        if (_playerUsingFlashlight[player] == false)
-        {
-            if (_playerFlashlight.TryGetValue(player, out var value))
-            {
-                // Fix #2: Check entity validity before removing
-                if (value.IsValid)
-                {
-                    value.Remove();
-                }
-                _playerFlashlight.Remove(player);
-            }
-            
-            return;
-        }
-        
-        var entity = _playerFlashlight.TryGetValue(player, out var flashlight) ? flashlight : Utilities.CreateEntityByName<COmniLight>("light_omni2");
-
-        if (entity == null || !entity.IsValid)
-        {
-            LogHelper.LogToConsole("Failed to create entity!");
-            return;
-        }
-        
-        entity.DirectLight = 3;
-        
-        var pawn = player.PlayerPawn.Value;
-        if (pawn?.AbsOrigin == null || pawn.V_angle == null)
-        {
-            LogHelper.LogToConsole("Failed to get player pawn data!");
-            return;
-        }
-
-        entity.Teleport(
-            new Vector(
-                pawn.AbsOrigin.X,
-                pawn.AbsOrigin.Y,
-                pawn.AbsOrigin.Z + (_playerIsCrouching[player] ? 46.03f : 64.03f)
-            ),
-            pawn.V_angle,
-            pawn.AbsVelocity
-        );
-        
-        entity.OuterAngle = 45f;
-        entity.Enabled = true;
-        entity.Color = Color.White;
-        entity.ColorTemperature = 6500;
-        entity.Brightness = 1f;
-        entity.Range = 5000f;
-        
-        entity.DispatchSpawn();
-        _playerFlashlight[player] = entity;
     }
 
     [ConsoleCommand("css_fl_toggle", "Toggles the flashlight")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
-    public void ToggleFlashlight(CCSPlayerController caller, CommandInfo? info)
+    public void OnToggleCommand(CCSPlayerController? caller, CommandInfo info)
     {
-        if (!caller.IsValid || !caller.PawnIsAlive) return;
-
-        if (_playerCanToggle[caller] == false) return;
-        
-        _playerUsingFlashlight[caller] = !_playerUsingFlashlight[caller];
-        _playerCanToggle[caller] = false;
-        
-        var currentCaller = caller; // Capture for closure
-                        
-        Instance?.AddTimer(0.25f, () =>
+        if (!Config.Enabled || caller is null || !IsEligiblePlayer(caller) || !caller.PawnIsAlive)
         {
-            _playerCanToggle[currentCaller] = true;
+            return;
+        }
+
+        TryToggleFlashlight(caller, EnsureState(caller));
+    }
+
+    private void TryToggleFlashlight(CCSPlayerController player, PlayerFlashlightState state)
+    {
+        var isOn = state.IsOn;
+        var canToggle = state.CanToggle;
+
+        if (!FlashlightLogic.TryToggle(ref isOn, ref canToggle))
+        {
+            return;
+        }
+
+        state.IsOn = isOn;
+        state.CanToggle = canToggle;
+
+        if (state.IsOn)
+        {
+            CreateAndParentLight(player, state);
+        }
+        else
+        {
+            DestroyLight(player.Slot);
+        }
+
+        var slot = player.Slot;
+        AddTimer(Config.ToggleCooldownSeconds, () =>
+        {
+            if (_playerStates.TryGetValue(slot, out var current))
+            {
+                current.CanToggle = true;
+            }
         });
+    }
+
+    private void CreateAndParentLight(CCSPlayerController player, PlayerFlashlightState state)
+    {
+        DestroyLight(player.Slot);
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn is null || !pawn.IsValid || pawn.AbsOrigin is null || pawn.V_angle is null)
+        {
+            Logger.LogWarning("Failed to get pawn data for {Player}", player.PlayerName);
+            state.IsOn = false;
+            return;
+        }
+
+        var light = Utilities.CreateEntityByName<CBarnLight>("light_barn");
+        if (light is null || !light.IsValid)
+        {
+            Logger.LogWarning("Failed to create light_barn for {Player}", player.PlayerName);
+            state.IsOn = false;
+            return;
+        }
+
+        var isCrouching = (player.Buttons & PlayerButtons.Duck) != 0;
+        var eyeOffsetZ = FlashlightLogic.GetEyeOffsetZ(
+            isCrouching,
+            Config.StandEyeOffsetZ,
+            Config.CrouchEyeOffsetZ);
+
+        var angles = pawn.V_angle;
+        var forward = FlashlightLogic.ForwardFromAnglesDegrees(angles.X, angles.Y);
+        var origin = FlashlightLogic.CalculateLightOrigin(
+            new Vector3(pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z),
+            forward,
+            eyeOffsetZ,
+            Config.ForwardDistance);
+
+        light.Enabled = true;
+        light.Color = Color.FromArgb(255, Config.ColorR, Config.ColorG, Config.ColorB);
+        light.ColorTemperature = Config.ColorTemperature;
+        light.Brightness = Config.Brightness;
+        light.Range = Config.Range;
+        light.SoftX = Config.SoftX;
+        light.SoftY = Config.SoftY;
+        light.Skirt = Config.Skirt;
+        light.SkirtNear = Config.SkirtNear;
+        light.CastShadows = Config.CastShadows ? 1 : 0;
+        light.DirectLight = 3;
+        light.SizeParams.X = Config.SizeX;
+        light.SizeParams.Y = Config.SizeY;
+        light.SizeParams.Z = Config.SizeZ;
+
+        light.Teleport(
+            origin,
+            new Vector3(angles.X, angles.Y, angles.Z),
+            null);
+
+        using (var keyValues = new CEntityKeyValues())
+        {
+            keyValues.SetString("lightcookie", Config.LightCookie);
+            light.DispatchSpawn(keyValues);
+        }
+
+        light.AcceptInput("SetParent", pawn, light, "!activator");
+        light.AcceptInput("SetParentAttachmentMaintainOffset", null, null, Config.AttachmentName);
+
+        state.Light = light;
+        state.IsOn = true;
+    }
+
+    private void DestroyLight(int slot)
+    {
+        if (!_playerStates.TryGetValue(slot, out var state))
+        {
+            return;
+        }
+
+        var light = state.Light;
+        state.Light = null;
+
+        if (light is not null && light.IsValid)
+        {
+            light.Remove();
+        }
+    }
+
+    private PlayerFlashlightState EnsureState(CCSPlayerController player)
+    {
+        if (_playerStates.TryGetValue(player.Slot, out var state))
+        {
+            return state;
+        }
+
+        state = new PlayerFlashlightState();
+        _playerStates[player.Slot] = state;
+        return state;
+    }
+
+    private static bool IsEligiblePlayer(CCSPlayerController? player)
+    {
+        return player is { IsValid: true, IsBot: false };
     }
 }

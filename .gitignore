@@ -1,3 +1,4 @@
 .idea
-Flashlight/bin
-Flashlight/obj
+**/bin/
+**/obj/
+.DS_Store
