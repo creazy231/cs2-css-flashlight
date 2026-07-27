@@ -71,6 +71,79 @@ public class FlashlightLogicTests
     }
 
     [Fact]
+    public void ForwardFromAnglesDegrees_PitchDrivesVerticalComponent()
+    {
+        // Source angles are inverted on pitch: positive pitch looks down.
+        Assert.True(FlashlightLogic.ForwardFromAnglesDegrees(45f, 0f).Z < 0f);
+        Assert.True(FlashlightLogic.ForwardFromAnglesDegrees(-45f, 0f).Z > 0f);
+    }
+
+    [Fact]
+    public void HorizontalForwardFromYawDegrees_HasNoVerticalComponent()
+    {
+        foreach (var yaw in new[] { -180f, -90f, -45f, 0f, 45f, 90f, 180f })
+        {
+            Assert.Equal(0f, FlashlightLogic.HorizontalForwardFromYawDegrees(yaw).Z, 5);
+        }
+    }
+
+    [Fact]
+    public void CalculateLightTransform_AnglesCarryFullViewRotation()
+    {
+        var transform = FlashlightLogic.CalculateLightTransform(
+            pawnOrigin: new Vector3(0f, 0f, 0f),
+            pitch: -35f,
+            yaw: 90f,
+            roll: 12f,
+            eyeOffsetZ: 64f,
+            forwardDistance: 54f);
+
+        // Pitch must survive into the light's angles, otherwise the beam only tracks yaw.
+        Assert.Equal(-35f, transform.Angles.X, 3);
+        Assert.Equal(90f, transform.Angles.Y, 3);
+        Assert.Equal(12f, transform.Angles.Z, 3);
+    }
+
+    [Theory]
+    [InlineData(-89f)]
+    [InlineData(-45f)]
+    [InlineData(0f)]
+    [InlineData(45f)]
+    [InlineData(89f)]
+    public void CalculateLightTransform_PitchNeverMovesTheOrigin(float pitch)
+    {
+        var transform = FlashlightLogic.CalculateLightTransform(
+            new Vector3(0f, 0f, 0f),
+            pitch,
+            yaw: 0f,
+            roll: 0f,
+            eyeOffsetZ: 64f,
+            forwardDistance: 54f);
+
+        // The muzzle stays at eye height and eye-forward regardless of pitch, so
+        // looking up or down can never shove the light through the ceiling or floor.
+        Assert.Equal(54f, transform.Origin.X, 3);
+        Assert.Equal(0f, transform.Origin.Y, 3);
+        Assert.Equal(64f, transform.Origin.Z, 3);
+    }
+
+    [Fact]
+    public void CalculateLightTransform_YawDrivesHorizontalOffset()
+    {
+        var transform = FlashlightLogic.CalculateLightTransform(
+            new Vector3(10f, 20f, 30f),
+            pitch: 0f,
+            yaw: 90f,
+            roll: 0f,
+            eyeOffsetZ: 64f,
+            forwardDistance: 54f);
+
+        Assert.Equal(10f, transform.Origin.X, 3);
+        Assert.Equal(74f, transform.Origin.Y, 3);
+        Assert.Equal(94f, transform.Origin.Z, 3);
+    }
+
+    [Fact]
     public void ShouldCreateAndDestroyLight_Policies()
     {
         Assert.True(FlashlightLogic.ShouldCreateLight(isOn: true, hasValidLight: false));
@@ -98,7 +171,6 @@ public class FlashlightLogicTests
             ForwardDistance = -10f,
             StandEyeOffsetZ = -1f,
             CrouchEyeOffsetZ = -1f,
-            AttachmentName = " ",
             LightCookie = ""
         };
 
@@ -118,7 +190,6 @@ public class FlashlightLogicTests
         Assert.Equal(0f, config.ForwardDistance);
         Assert.Equal(0f, config.StandEyeOffsetZ);
         Assert.Equal(0f, config.CrouchEyeOffsetZ);
-        Assert.Equal("axis_of_intent", config.AttachmentName);
         Assert.Equal("materials/effects/lightcookies/flashlight.vtex", config.LightCookie);
     }
 

@@ -16,7 +16,7 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
     public override string ModuleAuthor => "creazy.eth";
     public override string ModuleName => "Flashlight";
     public override string ModuleDescription => "Flashlight for Counter-Strike 2";
-    public override string ModuleVersion => "0.1.1";
+    public override string ModuleVersion => "0.1.2";
 
     public FlashlightConfig Config { get; set; } = new();
 
@@ -57,27 +57,49 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
 
     private void OnTick()
     {
-        if (!Config.Enabled || !Config.AllowUseKey)
+        if (!Config.Enabled)
         {
             return;
         }
 
         foreach (var player in Utilities.GetPlayers())
         {
-            if (!IsEligiblePlayer(player) || !player.PawnIsAlive)
+            if (!IsEligiblePlayer(player))
             {
                 continue;
             }
 
-            var state = EnsureState(player);
-            var usePressed = (player.Buttons & PlayerButtons.Use) != 0;
-
-            if (FlashlightLogic.IsUsePressedEdge(usePressed, state.WasUsePressed))
+            if (!player.PawnIsAlive)
             {
-                TryToggleFlashlight(player, state);
+                // An un-parented light no longer dies together with the pawn, so sweep it up here
+                // in case a death or round-end never reached the event handlers.
+                if (_playerStates.TryGetValue(player.Slot, out var deadState) && deadState.IsOn)
+                {
+                    deadState.IsOn = false;
+                    DestroyLight(player.Slot);
+                }
+
+                continue;
             }
 
-            state.WasUsePressed = usePressed;
+            var state = EnsureState(player);
+
+            if (Config.AllowUseKey)
+            {
+                var usePressed = (player.Buttons & PlayerButtons.Use) != 0;
+
+                if (FlashlightLogic.IsUsePressedEdge(usePressed, state.WasUsePressed))
+                {
+                    TryToggleFlashlight(player, state);
+                }
+
+                state.WasUsePressed = usePressed;
+            }
+
+            if (state.IsOn)
+            {
+                UpdateLight(player, state);
+            }
         }
     }
 
@@ -188,7 +210,7 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
 
         if (state.IsOn)
         {
-            CreateAndParentLight(player, state);
+            CreateLight(player, state);
         }
         else
         {
@@ -205,7 +227,7 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
         });
     }
 
-    private void CreateAndParentLight(CCSPlayerController player, PlayerFlashlightState state)
+    private void CreateLight(CCSPlayerController player, PlayerFlashlightState state)
     {
         DestroyLight(player.Slot);
 
@@ -225,20 +247,6 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
             return;
         }
 
-        var isCrouching = (player.Buttons & PlayerButtons.Duck) != 0;
-        var eyeOffsetZ = FlashlightLogic.GetEyeOffsetZ(
-            isCrouching,
-            Config.StandEyeOffsetZ,
-            Config.CrouchEyeOffsetZ);
-
-        var angles = pawn.V_angle;
-        var forward = FlashlightLogic.ForwardFromAnglesDegrees(angles.X, angles.Y);
-        var origin = FlashlightLogic.CalculateLightOrigin(
-            new Vector3(pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z),
-            forward,
-            eyeOffsetZ,
-            Config.ForwardDistance);
-
         light.Enabled = true;
         light.Color = Color.FromArgb(255, Config.ColorR, Config.ColorG, Config.ColorB);
         light.ColorTemperature = Config.ColorTemperature;
@@ -254,10 +262,7 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
         light.SizeParams.Y = Config.SizeY;
         light.SizeParams.Z = Config.SizeZ;
 
-        light.Teleport(
-            origin,
-            new Vector3(angles.X, angles.Y, angles.Z),
-            null);
+        ApplyTransform(light, player, pawn);
 
         using (var keyValues = new CEntityKeyValues())
         {
@@ -265,11 +270,67 @@ public class FlashlightPlugin : BasePlugin, IPluginConfig<FlashlightConfig>
             light.DispatchSpawn(keyValues);
         }
 
-        light.AcceptInput("SetParent", pawn, light, "!activator");
-        light.AcceptInput("SetParentAttachmentMaintainOffset", null, null, Config.AttachmentName);
-
         state.Light = light;
         state.IsOn = true;
+    }
+
+    /// <summary>
+    /// Keeps the light glued to the player's eye every tick.
+    /// </summary>
+    /// <remarks>
+    /// The light is deliberately not parented to the pawn. Handing it to the engine via
+    /// <c>SetParent</c> / <c>SetParentAttachmentMaintainOffset</c> locks its orientation to a model
+    /// attachment, and those attachments only carry the body's yaw, so the beam could never follow
+    /// the player looking up or down. Driving the transform ourselves keeps pitch and yaw in sync.
+    /// </remarks>
+    private void UpdateLight(CCSPlayerController player, PlayerFlashlightState state)
+    {
+        var light = state.Light;
+
+        if (light is null || !light.IsValid)
+        {
+            // The engine can reap the entity underneath us (round restart, cleanup); rebuild it.
+            state.Light = null;
+            CreateLight(player, state);
+            return;
+        }
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn is null || !pawn.IsValid || pawn.AbsOrigin is null || pawn.V_angle is null)
+        {
+            return;
+        }
+
+        ApplyTransform(light, player, pawn);
+    }
+
+    private void ApplyTransform(CBarnLight light, CCSPlayerController player, CCSPlayerPawn pawn)
+    {
+        var isCrouching = (player.Buttons & PlayerButtons.Duck) != 0;
+        var eyeOffsetZ = FlashlightLogic.GetEyeOffsetZ(
+            isCrouching,
+            Config.StandEyeOffsetZ,
+            Config.CrouchEyeOffsetZ);
+
+        var origin = pawn.AbsOrigin!;
+        var angles = pawn.V_angle;
+
+        var transform = FlashlightLogic.CalculateLightTransform(
+            new Vector3(origin.X, origin.Y, origin.Z),
+            angles.X,
+            angles.Y,
+            angles.Z,
+            eyeOffsetZ,
+            Config.ForwardDistance);
+
+        // Handing the pawn's velocity over lets clients interpolate the light between ticks
+        // instead of visibly stepping it.
+        var velocity = pawn.AbsVelocity;
+
+        light.Teleport(
+            transform.Origin,
+            transform.Angles,
+            velocity is null ? null : new Vector3(velocity.X, velocity.Y, velocity.Z));
     }
 
     private void DestroyLight(int slot)

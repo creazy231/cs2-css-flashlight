@@ -2,6 +2,12 @@ using System.Numerics;
 
 namespace Flashlight;
 
+/// <summary>
+/// Position and orientation to apply to the flashlight entity.
+/// <paramref name="Angles"/> is a Source QAngle laid out as (pitch, yaw, roll).
+/// </summary>
+public readonly record struct LightTransform(Vector3 Origin, Vector3 Angles);
+
 public static class FlashlightLogic
 {
     public static bool TryToggle(ref bool isOn, ref bool canToggle)
@@ -48,6 +54,39 @@ public static class FlashlightLogic
             cosPitch * MathF.Cos(yawRad),
             cosPitch * MathF.Sin(yawRad),
             -MathF.Sin(pitchRad));
+    }
+
+    /// <summary>
+    /// Forward vector on the horizontal plane only, ignoring pitch.
+    /// </summary>
+    public static Vector3 HorizontalForwardFromYawDegrees(float yaw)
+    {
+        var yawRad = yaw * (MathF.PI / 180f);
+
+        return new Vector3(MathF.Cos(yawRad), MathF.Sin(yawRad), 0f);
+    }
+
+    /// <summary>
+    /// World transform for the flashlight given the player's current pawn origin and view angles.
+    /// </summary>
+    /// <remarks>
+    /// The angles carry the full view rotation so the beam tracks pitch as well as yaw, while the
+    /// origin is only pushed forward on the horizontal plane. Offsetting the origin along the full
+    /// pitched forward vector would drop the light through the floor when looking straight down
+    /// (a crouched eye height of 46 minus a 54 unit offset ends up below the ground).
+    /// </remarks>
+    public static LightTransform CalculateLightTransform(
+        Vector3 pawnOrigin,
+        float pitch,
+        float yaw,
+        float roll,
+        float eyeOffsetZ,
+        float forwardDistance)
+    {
+        var forward = HorizontalForwardFromYawDegrees(yaw);
+        var origin = CalculateLightOrigin(pawnOrigin, forward, eyeOffsetZ, forwardDistance);
+
+        return new LightTransform(origin, new Vector3(pitch, yaw, roll));
     }
 
     public static bool ShouldCreateLight(bool isOn, bool hasValidLight)

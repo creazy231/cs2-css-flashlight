@@ -1,12 +1,12 @@
 # Flashlight
 
-Flashlight is a Counter-Strike 2 server plugin written in C# with [CounterStrikeSharp](https://docs.cssharp.dev). It gives human players a toggleable flashlight using a parented `light_barn` entity.
+Flashlight is a Counter-Strike 2 server plugin written in C# with [CounterStrikeSharp](https://docs.cssharp.dev). It gives human players a toggleable flashlight using a `light_barn` entity.
 
 ## Features
 
 - Toggle with the Use key (`E` by default) or `css_fl_toggle`
-- One `light_barn` per player, parented to the pawn attachment (no per-tick spawn/teleport)
-- Configurable brightness, range, color, shadows, offsets, and attachment
+- One `light_barn` per player, re-aimed each tick so the beam tracks both pitch and yaw
+- Configurable brightness, range, color, shadows, and offsets
 - Optional team restriction (`Any`, `CT`, or `T`)
 - Automatically turns off on death, spawn, and team change
 - Bots ignored
@@ -49,10 +49,9 @@ On first load, CounterStrikeSharp writes a JSON config for the plugin. Defaults:
 | `SoftX` / `SoftY` | `1.0` | Softness |
 | `Skirt` / `SkirtNear` | `0.5` / `1.0` | Skirt falloff |
 | `SizeX` / `SizeY` / `SizeZ` | `45` / `45` / `0.03` | Beam size params |
-| `ForwardDistance` | `54` | Spawn offset along view forward |
+| `ForwardDistance` | `54` | Horizontal offset in front of the eye, so the beam clears the player model |
 | `StandEyeOffsetZ` | `64` | Standing eye height offset |
 | `CrouchEyeOffsetZ` | `46` | Crouching eye height offset |
-| `AttachmentName` | `axis_of_intent` | Parent attachment |
 | `LightCookie` | `materials/effects/lightcookies/flashlight.vtex` | Flashlight cookie texture |
 
 ## Development
@@ -75,9 +74,16 @@ dotnet build
 dotnet test
 ```
 
-Unit tests cover toggle/cooldown logic, Use-key edge detection, origin math, create/destroy policy, and config clamping. Entity parenting requires a live CS2 server.
+Unit tests cover toggle/cooldown logic, Use-key edge detection, transform math (origin and pitch/yaw angles), create/destroy policy, and config clamping. Entity behaviour itself requires a live CS2 server.
 
 ## Changelog
+
+### v0.1.2
+
+- Fixed the beam only following horizontal aim: the light was parented to the pawn's `axis_of_intent` attachment, which carries body yaw but not view pitch, so looking up or down never moved it. The light is now un-parented and re-aimed every tick from the pawn's live `V_angle`.
+- Fixed the flashlight never updating when `AllowUseKey` was `false`, which previously short-circuited the whole tick loop.
+- `ForwardDistance` now offsets the light horizontally only, so looking straight down no longer pushes it through the floor.
+- Removed the obsolete `AttachmentName` config key (leaving it in an existing config file is harmless and ignored).
 
 ### v0.1.1
 

@@ -71,9 +71,6 @@ public class FlashlightConfig : BasePluginConfig
     [JsonPropertyName("CrouchEyeOffsetZ")]
     public float CrouchEyeOffsetZ { get; set; } = 46f;
 
-    [JsonPropertyName("AttachmentName")]
-    public string AttachmentName { get; set; } = "axis_of_intent";
-
     [JsonPropertyName("LightCookie")]
     public string LightCookie { get; set; } = "materials/effects/lightcookies/flashlight.vtex";
 
@@ -93,11 +90,6 @@ public class FlashlightConfig : BasePluginConfig
         ForwardDistance = Math.Max(0f, ForwardDistance);
         StandEyeOffsetZ = Math.Max(0f, StandEyeOffsetZ);
         CrouchEyeOffsetZ = Math.Max(0f, CrouchEyeOffsetZ);
-
-        if (string.IsNullOrWhiteSpace(AttachmentName))
-        {
-            AttachmentName = "axis_of_intent";
-        }
 
         if (string.IsNullOrWhiteSpace(LightCookie))
         {
